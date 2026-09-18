@@ -1,0 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root { --ink: #1c2624; --paper: #f4f1e9; --white: #fffdf8; --muted: #71807b; --line: #d8ded6; --coral: #e7624c; --teal: #1d8a7b; --mint: #d9f0e9; --display: 'Space Grotesk', 'Segoe UI', sans-serif; --mono: 'DM Mono', Consolas, monospace; font: 16px/1.45 var(--display); color: var(--ink); background: var(--paper); font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: radial-gradient(circle at 75% 5%, #fff9e9 0, transparent 32%), var(--paper); }
+button, input, textarea { font-family: inherit; }
+
