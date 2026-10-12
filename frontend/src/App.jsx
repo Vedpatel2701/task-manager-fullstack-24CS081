@@ -1,7 +1,37 @@
-import { useEffect, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useState } from 'react'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const AuthView = lazy(() => import('./AuthView.jsx'))
+const TaskDashboard = lazy(() => import('./TaskDashboard.jsx'))
+const AUTH_ROUTES = ['/login', '/register']
+
+function getRoute() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/login'
+  return [...AUTH_ROUTES, '/dashboard'].includes(path) ? path : '/login'
+}
+
+class LazyLoadErrorBoundary extends Component {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main className="loading-shell">
+          <section className="loading-card">
+            <strong>We could not load this part of the app.</strong>
+            <span>Refresh the page and try again.</span>
+          </section>
+        </main>
+      )
+    }
+    return this.props.children
+  }
+}
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -24,10 +54,22 @@ async function request(endpoint, options = {}, token = '') {
   return data
 }
 
+function LoadingFallback() {
+  return (
+    <main className="loading-shell">
+      <section className="loading-card" role="status" aria-live="polite">
+        <span className="loader" />
+        <strong>Loading your workspace...</strong>
+        <span>Preparing the next view.</span>
+      </section>
+    </main>
+  )
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('task_manager_token') || '')
+  const [route, setRoute] = useState(getRoute)
   const [user, setUser] = useState(null)
-  const [authMode, setAuthMode] = useState('login')
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
   const [authLoading, setAuthLoading] = useState(false)
   const [tasks, setTasks] = useState([])
@@ -41,14 +83,35 @@ function App() {
   const [editForm, setEditForm] = useState({ title: '', description: '' })
 
   useEffect(() => {
+    function handlePopState() {
+      setRoute(getRoute())
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  function navigate(nextRoute, replace = false) {
+    if (window.location.pathname !== nextRoute) {
+      window.history[replace ? 'replaceState' : 'pushState']({}, '', nextRoute)
+    }
+    setRoute(nextRoute)
+  }
+
+  useEffect(() => {
     if (!token) {
       setLoading(false)
       setUser(null)
       setTasks([])
+      if (route === '/dashboard') navigate('/login', true)
       return
     }
     restoreSession()
-  }, [token])
+  }, [token, route])
+
+  useEffect(() => {
+    if (token && user && AUTH_ROUTES.includes(route)) navigate('/dashboard', true)
+  }, [token, user, route])
 
   async function restoreSession() {
     setLoading(true)
@@ -83,6 +146,7 @@ function App() {
     setTasks([])
     setNotice('')
     setError('')
+    navigate('/login', true)
   }
 
   function updateAuthForm(event) {
@@ -95,14 +159,13 @@ function App() {
     setError('')
     setNotice('')
     try {
-      const result = await request(`/${authMode}`, {
-        method: 'POST',
-        body: JSON.stringify(authForm),
-      })
+      const authMode = route === '/register' ? 'register' : 'login'
+      const result = await request(`/${authMode}`, { method: 'POST', body: JSON.stringify(authForm) })
       localStorage.setItem('task_manager_token', result.token)
       setUser(result.user)
       setAuthForm({ email: '', password: '' })
       setToken(result.token)
+      navigate('/dashboard', true)
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -117,15 +180,11 @@ function App() {
   async function addTask(event) {
     event.preventDefault()
     if (!form.title.trim()) return setError('Please enter a task title.')
-
     setSubmitting(true)
     setError('')
     setNotice('')
     try {
-      const newTask = await request('/tasks', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      }, token)
+      const newTask = await request('/tasks', { method: 'POST', body: JSON.stringify(form) }, token)
       setTasks([newTask, ...tasks])
       setForm({ title: '', description: '' })
       setNotice('Task added successfully.')
@@ -141,10 +200,7 @@ function App() {
     setWorkingId(task._id)
     setError('')
     try {
-      const updatedTask = await request(`/tasks/${task._id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ completed: !task.completed }),
-      }, token)
+      const updatedTask = await request(`/tasks/${task._id}`, { method: 'PUT', body: JSON.stringify({ completed: !task.completed }) }, token)
       setTasks(tasks.map((item) => item._id === task._id ? updatedTask : item))
       setNotice(updatedTask.completed ? 'Task marked complete.' : 'Task moved back to your list.')
     } catch (requestError) {
@@ -169,14 +225,10 @@ function App() {
   async function updateTask(event, task) {
     event.preventDefault()
     if (!editForm.title.trim()) return setError('Please enter a task title.')
-
     setWorkingId(task._id)
     setError('')
     try {
-      const updatedTask = await request(`/tasks/${task._id}`, {
-        method: 'PUT',
-        body: JSON.stringify(editForm),
-      }, token)
+      const updatedTask = await request(`/tasks/${task._id}`, { method: 'PUT', body: JSON.stringify(editForm) }, token)
       setTasks(tasks.map((item) => item._id === task._id ? updatedTask : item))
       setEditingId('')
       setNotice('Task updated successfully.')
@@ -190,7 +242,6 @@ function App() {
 
   async function deleteTask(task) {
     if (!window.confirm(`Delete "${task.title}"? This cannot be undone.`)) return
-
     setWorkingId(task._id)
     setError('')
     try {
@@ -205,104 +256,47 @@ function App() {
     }
   }
 
-  if (!token || !user) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-panel">
-          <div className="brand-mark">TM</div>
-          <p className="eyebrow">Practical 7 / 24CS081</p>
-          <h1>{authMode === 'login' ? 'Welcome back.' : 'Start with a clean slate.'}</h1>
-          <p className="intro-copy">Sign in to manage your private task workspace.</p>
-          {error && <div className="message error" role="alert">{error}</div>}
-          <form className="auth-form" onSubmit={submitAuth}>
-            <label htmlFor="auth-email">Email</label>
-            <input id="auth-email" name="email" type="email" value={authForm.email} onChange={updateAuthForm} placeholder="you@example.com" autoComplete="email" required />
-            <label htmlFor="auth-password">Password</label>
-            <input id="auth-password" name="password" type="password" value={authForm.password} onChange={updateAuthForm} placeholder="At least 6 characters" minLength="6" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} required />
-            <button className="primary-button" type="submit" disabled={authLoading}>{authLoading ? 'Please wait...' : authMode === 'login' ? 'Login' : 'Register'} <span aria-hidden="true">→</span></button>
-          </form>
-          <button className="switch-auth" type="button" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setError('') }}>
-            {authMode === 'login' ? 'Need an account? Register' : 'Already registered? Login'}
-          </button>
-        </section>
-      </main>
-    )
-  }
+  const view = route !== '/dashboard'
+    ? <AuthView
+        authForm={authForm}
+        authLoading={authLoading}
+        authMode={route === '/register' ? 'register' : 'login'}
+        error={error}
+        onAuthFormChange={updateAuthForm}
+        onAuthSubmit={submitAuth}
+        onAuthModeChange={() => {
+          setError('')
+          navigate(route === '/login' ? '/register' : '/login')
+        }}
+      />
+    : token && user
+      ? <TaskDashboard
+        editForm={editForm}
+        editingId={editingId}
+        error={error}
+        form={form}
+        loading={loading}
+        notice={notice}
+        submitting={submitting}
+        tasks={tasks}
+        user={user}
+        workingId={workingId}
+        onAddTask={addTask}
+        onDeleteTask={deleteTask}
+        onEditFormChange={updateEditForm}
+        onLogout={logout}
+        onStartEditing={startEditing}
+        onSubmitEdit={updateTask}
+        onToggleTask={toggleTask}
+        onUpdateForm={updateForm}
+        onCancelEdit={() => setEditingId('')}
+      />
+      : <LoadingFallback />
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div className="brand-mark">TM</div>
-        <div>
-          <p className="eyebrow">Practical 7 / 24CS081</p>
-          <p className="student-name">{user.email}</p>
-        </div>
-        <div className="topbar-actions"><span className="api-status">Mongo-backed workspace</span><button className="logout-button" type="button" onClick={logout}>Logout</button></div>
-      </header>
-
-      <section className="intro">
-        <p className="eyebrow">A clear place to begin</p>
-        <h1>Make room for what matters.</h1>
-        <p className="intro-copy">Capture the next thing, give it shape, and move it across the finish line.</p>
-      </section>
-
-      <section className="workspace">
-        <form className="task-form" onSubmit={addTask}>
-          <div className="section-label"><span>01</span><h2>New task</h2></div>
-          <label htmlFor="title">Task title</label>
-          <input id="title" name="title" value={form.title} onChange={updateForm} placeholder="What needs your attention?" maxLength="120" />
-          <label htmlFor="description">Description <span>(optional)</span></label>
-          <textarea id="description" name="description" value={form.description} onChange={updateForm} placeholder="Add a little context..." rows="4" maxLength="500" />
-          <button className="primary-button" type="submit" disabled={submitting}>
-            {submitting ? 'Adding...' : 'Add Task'} <span aria-hidden="true">+</span>
-          </button>
-        </form>
-
-        <section className="task-panel" aria-live="polite">
-          <div className="section-heading">
-            <div className="section-label"><span>02</span><h2>Your tasks</h2></div>
-            <span className="task-count">{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</span>
-          </div>
-          {notice && <div className="message success" role="status">{notice}</div>}
-          {error && <div className="message error" role="alert">{error}</div>}
-          {loading ? (
-            <div className="state-card"><span className="loader" />Loading your tasks...</div>
-          ) : tasks.length === 0 ? (
-            <div className="state-card empty-state"><strong>A clean slate.</strong><span>Your next task belongs here.</span></div>
-          ) : (
-            <div className="task-list">
-              {tasks.map((task) => (
-                <article className={`task-card ${task.completed ? 'is-complete' : ''}`} key={task._id}>
-                  {editingId === task._id ? (
-                    <form className="edit-form" onSubmit={(event) => updateTask(event, task)}>
-                      <input name="title" value={editForm.title} onChange={updateEditForm} maxLength="120" aria-label="Edit task title" autoFocus />
-                      <textarea name="description" value={editForm.description} onChange={updateEditForm} maxLength="500" rows="3" aria-label="Edit task description" />
-                      <div className="task-actions">
-                        <button type="submit" className="text-button" disabled={workingId === task._id}>{workingId === task._id ? 'Saving...' : 'Save'}</button>
-                        <button type="button" className="muted-button" onClick={() => setEditingId('')} disabled={workingId === task._id}>Cancel</button>
-                      </div>
-                    </form>
-                  ) : (
-                    <>
-                      <div className="task-card-copy">
-                        <span className="task-dot" aria-hidden="true" />
-                        <div><h3>{task.title}</h3>{task.description && <p>{task.description}</p>}</div>
-                      </div>
-                      <div className="task-actions">
-                        <button type="button" className="text-button" onClick={() => startEditing(task)} disabled={workingId === task._id}>Edit</button>
-                        <button type="button" className="text-button" onClick={() => toggleTask(task)} disabled={workingId === task._id}>{workingId === task._id ? 'Working...' : task.completed ? 'Undo' : 'Complete'}</button>
-                        <button type="button" className="delete-button" onClick={() => deleteTask(task)} disabled={workingId === task._id} aria-label={`Delete ${task.title}`}>Delete</button>
-                      </div>
-                    </>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </section>
-      <footer>React + Node.js + MongoDB <span>///</span> Task Manager</footer>
-    </main>
+    <LazyLoadErrorBoundary>
+      <Suspense fallback={<LoadingFallback />}>{view}</Suspense>
+    </LazyLoadErrorBoundary>
   )
 }
 

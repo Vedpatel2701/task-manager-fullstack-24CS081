@@ -58,3 +58,28 @@ Task endpoints require `Authorization: Bearer <token>`. Passwords are hashed wit
 4. Send the token as a Bearer header and verify task create, list, update/complete, and delete operations.
 5. Request `/api/me` with the token and verify the returned email.
 6. Use the frontend Logout button, refresh, and verify the login screen appears.
+
+## Practical 8: Performance Optimization and Lazy Loading
+
+The frontend keeps the existing authentication and task-management behavior while splitting the authenticated and unauthenticated route views into separate React lazy-loaded chunks. The task list is also loaded as an additional chunk when the task dashboard is rendered. `Suspense` provides a user-friendly loading state, and an error boundary gives a safe refresh message if a lazy chunk cannot be loaded.
+
+### Production build evidence
+
+The pre-optimization baseline was recorded before the lazy-loading changes. Replace the manual placeholders below only with values captured from the same production build and browser conditions:
+
+| Measurement | Baseline | Optimized | How to record |
+| --- | --- | --- | --- |
+| Initial JavaScript bundle | 228.27 kB (71.06 kB gzip) | 225.25 kB (70.61 kB gzip) | Compare the Vite build output |
+| JavaScript transferred on initial view | `[collect manually]` | `[collect manually]` | Chrome DevTools Network, disable cache |
+| Page-load measurement | `[collect manually]` | `[collect manually]` | Chrome DevTools Performance or Lighthouse |
+
+To observe lazy loading, run `npm run build` and `npm run preview` in `frontend`, open the preview URL, and open Chrome DevTools **Network**. Enable **Disable cache**, select **Slow 3G** throttling, reload, and filter by `JS`. The authentication and task dashboard chunks should load separately when their views are needed; the loading fallback should be visible during a delayed chunk request.
+
+Use **React DevTools Profiler** to record a login-to-dashboard interaction and a task edit or completion. Select a commit with a larger update, inspect the component that rendered, and use the “why did this render?” information to investigate whether changed props or state caused an unnecessary re-render. Do not report a finding unless it is visible in the profiler recording.
+
+### Practical 8 screenshots
+
+1. The optimized `npm run build` output showing multiple JavaScript chunks.
+2. Chrome DevTools Network with Slow 3G and the lazy chunk request/loading fallback visible.
+3. The authenticated task dashboard after navigation, showing existing task functionality.
+4. React DevTools Profiler showing the recorded interaction and selected component render details.
