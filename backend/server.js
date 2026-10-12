@@ -2,9 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
+const path = require('path');
 const taskRoutes = require('./routes/taskRoutes');
+const authRoutes = require('./routes/authRoutes');
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -16,6 +18,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Task Manager API is running' });
 });
 
+app.use('/api', authRoutes);
 app.use('/api/tasks', taskRoutes);
 
 app.use((req, res) => {
@@ -33,8 +36,17 @@ async function startServer() {
   if (!process.env.MONGO_URI) {
     throw new Error('MONGO_URI is missing. Add it to backend/.env.');
   }
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is missing. Add it to backend/.env.');
+  }
 
-  await mongoose.connect(process.env.MONGO_URI);
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+  } catch (error) {
+    throw new Error(
+      'Unable to connect to MongoDB. Check that MongoDB is running and that MONGO_URI in backend/.env is correct.',
+    );
+  }
   console.log('MongoDB connected');
 
   app.listen(PORT, () => {
