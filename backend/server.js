@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const path = require('path');
 const taskRoutes = require('./routes/taskRoutes');
 const authRoutes = require('./routes/authRoutes');
+const authenticate = require('./middleware/authMiddleware');
+const { getStats } = require('./cache/cache');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -19,6 +21,9 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api', authRoutes);
+app.get('/api/cache/stats', authenticate, (req, res) => {
+  res.json({ cache: getStats() });
+});
 app.use('/api/tasks', taskRoutes);
 
 app.use((req, res) => {

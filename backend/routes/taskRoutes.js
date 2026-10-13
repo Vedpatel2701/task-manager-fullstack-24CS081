@@ -3,6 +3,7 @@ const authenticate = require('../middleware/authMiddleware');
 const { validateBody } = require('../middleware/validateMiddleware');
 const {
   getTasks,
+  getTaskById,
   createTask,
   updateTask,
   deleteTask,
@@ -12,6 +13,6 @@ const router = express.Router();
 
 router.use(authenticate);
 router.route('/').get(getTasks).post(validateBody(['title']), createTask);
-router.route('/:id').put(updateTask).delete(deleteTask);
+router.route('/:id').get(getTaskById).put(updateTask).delete(deleteTask);
 
 module.exports = router;
